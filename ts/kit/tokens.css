@@ -1,7 +1,7 @@
 /* ce-design tokens: the Twinton observatory look, the ce-net standard for every page and screen.
    Source: maps.ce-net.com (repo maps-ce-net, site/index.html, commits a8165d8 227617e f4930e9 a638396).
-   Leif approved it as the standard 2026-10-25 12:34 CST. Dark is the default; light only by the person's switch
-   (data-theme="light", remembered in localStorage "ce-theme"). Same variable names as the old ce-design sheet
+   Pages built on this kit open in the light theme (data-theme="light" on <html>); dark by the person's switch,
+   remembered in localStorage "ce-theme". Same variable names as the old ce-design sheet
    so pages that already use them pick up the new look; maps-style aliases (--bg --dim --faint --f --disp) included. */
 @font-face{font-family:Geist;font-weight:100 900;font-display:swap;
   src:url(fonts/geist.woff2) format("woff2")}
