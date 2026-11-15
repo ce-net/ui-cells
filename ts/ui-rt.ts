@@ -31,6 +31,12 @@ export interface ViewCtx<P, D, E, S extends string> {
   readonly emit: E;
   /** The element the host fills with the cell placed in that slot; empty when the viewer may not have that cell. */
   slot(name: S): HTMLElement;
+  /**
+   * The same for a slot named at run time by this view's own backend (the shell's `Layout` names only the slots the
+   * viewer may open, so the bundle never carries the name of one they may not). Its `data-state` is `mounted` or
+   * `empty`: the one thing a parent can observe about a slot.
+   */
+  place(name: string): HTMLElement;
 }
 
 /** What the host gives a view it mounts. */
@@ -52,7 +58,6 @@ export interface Spec<P, D, E, Src, S extends string> {
   readonly view: string;
   readonly needs: string;
   readonly events: readonly (keyof E & string)[];
-  readonly slots: readonly S[];
   /** every prop's value when the placing view gives none */
   readonly defaults: P;
   readonly connect: (g: Grant) => Promise<Src & { close(): void }>;
@@ -130,6 +135,9 @@ export function defineView<P, D, E, Src, S extends string = never>(spec: Spec<P,
           setProps(p) { props = { ...props, ...p }; load(); },
           emit: emitter as unknown as E,
           slot(name) {
+            return ctx.place(name);
+          },
+          place(name) {
             let s = slots.get(name);
             if (s === undefined) { s = host.slot(name); slots.set(name, s); }
             return s;
@@ -178,15 +186,15 @@ export function isGrantRefusal(e: unknown): boolean {
   return kind === 'Gate' || kind === 'Right' || /Gate|revoked|expired|no grant/i.test(errText(e));
 }
 
-/** Load one answer, again every `everyMs` while mounted. A `{err}` answer is shown as the view's failure. */
-export function once<T>(run: () => Promise<T>, set: (v: T) => void, fail: (why: string) => void, gone: (why: string) => void, everyMs = 30_000): () => void {
+/**
+ * Load one answer; after `everyMs`, `again` opens a new connection and loads it again (a new Hello each time, so an
+ * ended or revoked grant is refused within that time, as for streams).
+ */
+export function once<T>(run: () => Promise<T>, set: (v: T) => void, fail: (why: string) => void, gone: (why: string) => void, again: () => void, everyMs = 30_000): () => void {
   let live = true;
-  const tick = (): void => {
-    run().then((v) => { if (live) set(v); }, (e: unknown) => { if (!live) return; if (isGrantRefusal(e)) gone(errText(e)); else fail(errText(e)); });
-  };
-  tick();
-  const id = setInterval(tick, everyMs);
-  return () => { live = false; clearInterval(id); };
+  run().then((v) => { if (live) set(v); }, (e: unknown) => { if (!live) return; if (isGrantRefusal(e)) gone(errText(e)); else fail(errText(e)); });
+  const id = setTimeout(() => { if (live) again(); }, everyMs);
+  return () => { live = false; clearTimeout(id); };
 }
 
 /**
