@@ -66,7 +66,7 @@ dependencies = [
 [[package]]
 name = "ce-gate"
 version = "0.1.0"
-source = "git+https://github.com/Leif-Rydenfalk/rust-stack?rev=2aede6d81d2d856d1d17b383624dfd19ce6aeba9#2aede6d81d2d856d1d17b383624dfd19ce6aeba9"
+source = "git+https://github.com/Leif-Rydenfalk/rust-stack?rev=d283bd528f96effabcf4dec56eb4fad1bec08d27#d283bd528f96effabcf4dec56eb4fad1bec08d27"
 dependencies = [
  "ce-cap",
  "ce-identity",
@@ -96,7 +96,7 @@ dependencies = [
 [[package]]
 name = "ce-wire"
 version = "0.1.0"
-source = "git+https://github.com/Leif-Rydenfalk/rust-stack?rev=2aede6d81d2d856d1d17b383624dfd19ce6aeba9#2aede6d81d2d856d1d17b383624dfd19ce6aeba9"
+source = "git+https://github.com/Leif-Rydenfalk/rust-stack?rev=d283bd528f96effabcf4dec56eb4fad1bec08d27#d283bd528f96effabcf4dec56eb4fad1bec08d27"
 dependencies = [
  "postcard",
  "serde",

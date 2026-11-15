@@ -1,5 +1,6 @@
-//! Through a real ce-gate: row caveats are inherited along the whole chain (the control room's drop probe, 2026-11-15:
-//! root -> A with `cr.devices:where:node=..` -> B without it saw all 5 devices and 400 audit rows), and a view cell's
+//! Through a real ce-gate: row caveats are inherited along the whole chain, never dropped, only narrowed (the control
+//! room's drop probe, 2026-11-15: root -> A with `cr.devices:where:node=..` -> B without it saw all 5 devices and 400
+//! audit rows; now B sees A's narrow rows), and a view cell's
 //! sources are read with its own key's narrow grant, never the node's key.
 use ce_gate::ce_cap::{Caveats as CapCaveats, Resource, SignedCapability};
 use ce_gate::ce_identity::Identity;
@@ -62,22 +63,22 @@ fn the_drop_probe_sees_only_the_narrow_rows() {
     let l0 = SignedCapability::issue(&node, a.node_id(), ab(&["ui-chain.test.devices:read", "ui-chain.test.devices:where:node=foreman-ops-1", "delegate:1"]), Resource::Any, cv(), 1, None);
     assert_eq!(list(addr, &a, &[l0.clone()]).unwrap(), vec!["foreman-ops-1"]);
 
-    // B, A's child, with the caveat dropped: refused, never all five
+    // B, A's child, with the caveat dropped: it inherits A's, so only the narrow rows, never all five
     let l1 = SignedCapability::issue(&a, b.node_id(), ab(&["ui-chain.test.devices:read"]), Resource::Any, cv(), 2, Some(l0.id()));
-    let e = list(addr, &b, &[l0.clone(), l1]).unwrap_err();
-    assert!(e.contains("dropped"), "{e}");
+    assert_eq!(list(addr, &b, &[l0.clone(), l1]).unwrap(), vec!["foreman-ops-1"]);
 
-    // a re-delegation that adds a wider caveat beside the parent's: refused
+    // a re-delegation that adds a wider caveat beside the parent's: ignored, the narrow rows
     let wide_parent = SignedCapability::issue(&node, a.node_id(), ab(&["ui-chain.test.devices:*", "ui-chain.test.devices:where:node=foreman-ops-1", "delegate:1"]), Resource::Any, cv(), 3, None);
     let wide = SignedCapability::issue(&a, b.node_id(), ab(&["ui-chain.test.devices:read", "ui-chain.test.devices:where:node=foreman-ops-1", "ui-chain.test.devices:where:node=*"]), Resource::Any, cv(), 4, Some(wide_parent.id()));
-    let e = list(addr, &b, &[wide_parent.clone(), wide]).unwrap_err();
-    assert!(e.contains("wider"), "{e}");
-    // replacing it with a wider one: refused the same
+    assert_eq!(list(addr, &b, &[wide_parent.clone(), wide]).unwrap(), vec!["foreman-ops-1"]);
+    // replacing it with a wider one, or with another node: never more than the parent's
     let wide = SignedCapability::issue(&a, b.node_id(), ab(&["ui-chain.test.devices:read", "ui-chain.test.devices:where:node=*"]), Resource::Any, cv(), 5, Some(wide_parent.id()));
-    assert!(list(addr, &b, &[wide_parent.clone(), wide]).unwrap_err().contains("wider"));
-    // carrying it (or narrowing it) on: the narrow rows
-    let kept = SignedCapability::issue(&a, b.node_id(), ab(&["ui-chain.test.devices:read", "ui-chain.test.devices:where:node=foreman-ops-1"]), Resource::Any, cv(), 6, Some(wide_parent.id()));
-    assert_eq!(list(addr, &b, &[wide_parent, kept]).unwrap(), vec!["foreman-ops-1"]);
+    assert_eq!(list(addr, &b, &[wide_parent.clone(), wide]).unwrap(), vec!["foreman-ops-1"]);
+    let other = SignedCapability::issue(&a, b.node_id(), ab(&["ui-chain.test.devices:read", "ui-chain.test.devices:where:node=debian"]), Resource::Any, cv(), 6, Some(wide_parent.id()));
+    assert!(list(addr, &b, &[wide_parent.clone(), other]).unwrap().is_empty(), "disjoint caveats pass no row");
+    // the v1 reader sees the inherited caveat too
+    let c = ce_wire::Caller { name: String::new(), rights: vec!["ability:ui-chain.test.devices:where:node=".into()] };
+    assert!(!ui_chain::in_scope(&ui_chain::scopes(&c, CELL, "node"), "foreman-ops-1"));
 }
 
 #[test]

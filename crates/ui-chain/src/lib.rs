@@ -6,10 +6,11 @@
 //! - `<cell>:scope:<key>=<v>`, the first edition's spelling, read as the same equality caveat (v1 callers keep it).
 //! A wildcard right (`*`) carries no caveat and invents none.
 //!
-//! Never droppable: ce-gate ([`ce_gate::row_caveats_kept`], rust-stack 2aede6d) refuses a chain in which any link
-//! omits or widens a caveat its parent carried, so the leaf this crate reads holds the intersection of every link's
-//! caveats, and every row caveat reaches the cell (none is cut off by the 64-ability limit). A delegate that drops
-//! `cr.devices:where:node=..` is refused at the Hello; it never reaches [`Caveats::of`] unfiltered.
+//! Never droppable: ce-gate ([`ce_gate::row_caveats_inherited`], rust-stack d283bd5) hands the cell the leaf's
+//! abilities with the chain's effective row caveats, per cell and key the intersection of every link's (spelled
+//! `where`), and every row caveat reaches the cell (none is cut off by the 64-ability limit). A delegate that drops
+//! `cr.devices:where:node=..` still carries it; one that names a wider value is held to its parent's. So a cell that
+//! filters with [`Caveats::of`] never runs unfiltered on a dimension any link of the chain caveats.
 //!
 //! Sources: a view cell calls its sources with its own key ([`cell_key`]), never the node's: the node mints each cell
 //! one grant for exactly the abilities it reads with (`ce-iam grant --to <cell key> --action .. --action delegate:1`),
@@ -35,11 +36,15 @@ pub fn holds(c: &Caller, ability: &str) -> bool {
     c.has(ability) || c.grants(ability)
 }
 
-/// The values of every `<cell>:scope:<key>=<value>` ability in the caller's verified leaf, in order.
-/// Empty: the caller is not scoped on `key`.
+/// The allowed values of `key` in the caller's row caveats for `cell` (both spellings, `where` and `scope`, as
+/// [`Caveats::of`] reads them; the gate hands effective caveats over as `where`), in order. Empty: not scoped on
+/// `key`. A caveat whose links share no value reads as a value no row has, so it still hides every row.
 pub fn scopes(c: &Caller, cell: &str, key: &str) -> Vec<String> {
-    let head = format!("{}{cell}:scope:{key}=", ce_wire::ABILITY_RIGHT);
-    c.rights.iter().filter_map(|r| r.strip_prefix(head.as_str())).filter(|v| !v.is_empty()).map(String::from).collect()
+    match Caveats::of(c, cell).0.remove(key) {
+        None => vec![],
+        Some(v) if v.is_empty() => vec![String::from("\u{0}none")],
+        Some(v) => v,
+    }
 }
 
 /// `pattern` matches `value`: equal, `*`, or a trailing `*` prefix match.

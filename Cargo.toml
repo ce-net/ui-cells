@@ -8,5 +8,5 @@ license = "Apache-2.0"
 publish = false
 
 [workspace.dependencies]
-ce-wire = { git = "https://github.com/Leif-Rydenfalk/rust-stack", rev = "2aede6d81d2d856d1d17b383624dfd19ce6aeba9", default-features = false, features = ["codec"] }
-ce-gate = { git = "https://github.com/Leif-Rydenfalk/rust-stack", rev = "2aede6d81d2d856d1d17b383624dfd19ce6aeba9" }
+ce-wire = { git = "https://github.com/Leif-Rydenfalk/rust-stack", rev = "d283bd528f96effabcf4dec56eb4fad1bec08d27", default-features = false, features = ["codec"] }
+ce-gate = { git = "https://github.com/Leif-Rydenfalk/rust-stack", rev = "d283bd528f96effabcf4dec56eb4fad1bec08d27" }
