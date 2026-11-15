@@ -1,0 +1,11 @@
+[package]
+name = "ui-gen"
+version = "0.1.0"
+description = "ce-wire-gen --lang ts-ui, as its own tool until ce-wire-gen has it: the views! block of a contract to typed TypeScript view bindings over the ts-web client"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "ui-gen"
+path = "src/main.rs"

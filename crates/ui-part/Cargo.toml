@@ -1,0 +1,10 @@
+[package]
+name = "ui-part"
+version = "0.1.0"
+description = "The ui { } half of a full-stack cell contract: views (props, needs, events, data, slots, speaks) and Part fields, checked at compile time against the cell's ops"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+ce-wire = { workspace = true, features = ["client"] }

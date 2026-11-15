@@ -1,0 +1,11 @@
+[package]
+name = "ui-chain"
+version = "0.1.0"
+description = "Read a caller's verified chain in a view cell (rights, chain id, row caveats) and filter rows by it (the equality and set caveats of layer-view)"
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+ce-wire = { workspace = true }
+ce-gate = { workspace = true }

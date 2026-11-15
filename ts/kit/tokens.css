@@ -1,0 +1,55 @@
+/* ce-design tokens: the Twinton observatory look, the ce-net standard for every page and screen.
+   Source: maps.ce-net.com (repo maps-ce-net, site/index.html, commits a8165d8 227617e f4930e9 a638396).
+   Leif approved it as the standard 2026-10-25 12:34 CST. Dark is the default; light only by the person's switch
+   (data-theme="light", remembered in localStorage "ce-theme"). Same variable names as the old ce-design sheet
+   so pages that already use them pick up the new look; maps-style aliases (--bg --dim --faint --f --disp) included. */
+@font-face{font-family:Geist;font-weight:100 900;font-display:swap;
+  src:url(fonts/geist.woff2) format("woff2")}
+@font-face{font-family:"JetBrains Mono";font-weight:400 600;font-display:swap;
+  src:url(fonts/jetbrainsmono.woff2) format("woff2")}
+@font-face{font-family:Michroma;font-weight:400;font-display:swap;
+  src:url(fonts/michroma.woff2) format("woff2")}
+
+:root{color-scheme:dark;
+  /* neutrals: the black stage (dark, the default) */
+  --ground:#070807;--surface:#0d0f0d;--well:#141614;--raise:#1c1f1c;
+  --panel:rgba(10,12,10,.78);              /* glass card fill, always with --blur */
+  --ink:#f2f3ef;--ink-2:#8a8f87;--ink-3:#5d625b;
+  --line:rgba(255,255,255,.10);--line-2:rgba(255,255,255,.14);
+  --hover:rgba(255,255,255,.04);--press:rgba(255,255,255,.08);
+  /* one accent: Twinton amber */
+  --acc:#f5a524;--acc-hi:#ffc35a;--acc-ink:#130d00;--acc-soft:rgba(245,165,36,.14);
+  /* states (never decoration). --live is the green dot / good / saved */
+  --live:#9bd16b;--ok:#9bd16b;--warn:#ffc35a;--bad:#ef4444;
+  /* the stage: kept for pages that used it; it is now the ground itself */
+  --stage:#070807;--stage-2:#0d0f0d;--stage-ink:#f2f3ef;--stage-ink-2:#8a8f87;--stage-line:rgba(255,255,255,.10);
+  /* type: Michroma display, Geist body, JetBrains Mono labels and figures */
+  --cjk:"PingFang SC","HarmonyOS Sans SC","Noto Sans SC","Microsoft YaHei",sans-serif;
+  --sans:Geist,Inter,system-ui,-apple-system,var(--cjk),sans-serif;
+  --mono:"JetBrains Mono","Geist Mono",ui-monospace,SFMono-Regular,Menlo,var(--cjk),monospace;
+  --disp:Michroma,Orbitron,system-ui,var(--cjk),sans-serif;
+  --t-2xs:9.5px;--t-xs:10.5px;--t-sm:12px;--t-md:13px;--t-base:15px;--t-lg:clamp(15px,1.4vw,17px);
+  --t-num:21px;--t-xl:clamp(19px,2.4vw,27px);--t-2xl:clamp(26px,3.4vw,40px);--t-3xl:clamp(32px,4.4vw,56px);
+  --track-label:.12em;--track-crumb:.18em;--track-disp:.06em;
+  /* space: 4 px base */
+  --s-1:4px;--s-2:8px;--s-3:12px;--s-4:16px;--s-5:24px;--s-6:32px;--s-7:48px;--s-8:72px;
+  --m:clamp(16px,3vw,40px);--max:1120px;--rail:64px;
+  /* shape: square, technical. Cards 3 px, buttons and pills 2 px */
+  --r:3px;--r-sm:2px;--r-pill:2px;--tick:8px;
+  --blur:blur(10px);
+  --edge:0 0 0 1px var(--line);--lift:0 18px 40px -18px rgba(0,0,0,.8);
+  /* motion: values tick up, cards fade in 150 ms, nothing bounces */
+  --ease:cubic-bezier(.2,.7,.1,1);--fast:.15s;--mid:.25s;--slow:.6s;
+  /* maps.ce-net.com aliases */
+  --bg:var(--ground);--s1:var(--surface);--s2:var(--well);--s3:var(--raise);
+  --dim:var(--ink-2);--faint:var(--ink-3);--f:var(--sans)}
+
+:root[data-theme="light"]{color-scheme:light;
+  --ground:#f2f2ee;--surface:#ffffff;--well:#e8e8e3;--raise:#f7f7f4;
+  --panel:rgba(255,255,255,.82);
+  --ink:#0d0f0d;--ink-2:#5d625b;--ink-3:#8a8f87;
+  --line:rgba(13,15,13,.12);--line-2:rgba(13,15,13,.2);
+  --hover:rgba(13,15,13,.04);--press:rgba(13,15,13,.07);
+  --acc:#b8730a;--acc-hi:#d98a10;--acc-ink:#ffffff;--acc-soft:rgba(184,115,10,.12);
+  --live:#3f8f2a;--ok:#3f8f2a;--warn:#b8730a;--bad:#dc2626;
+  --lift:0 18px 40px -22px rgba(13,15,13,.25)}
