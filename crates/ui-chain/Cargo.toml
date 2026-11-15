@@ -9,3 +9,7 @@ publish.workspace = true
 [dependencies]
 ce-wire = { workspace = true }
 ce-gate = { workspace = true }
+getrandom = "0.2"
+
+[dev-dependencies]
+ce-wire = { workspace = true, features = ["blocking"] }

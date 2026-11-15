@@ -1,11 +1,21 @@
 //! ui-chain: what a view cell reads from the caller's verified chain, and `layer_view`, the row filter.
 //!
 //! Lifted from repo:control-room crates/cr-view (first edition). Rights come from what ce-gate verified, never from a
-//! request field. Row caveats are leaf abilities of the chain, signed by the node that minted it, so a page can neither
-//! add nor drop one:
+//! request field. Row caveats are abilities of the chain, signed along it, so a page can neither add nor drop one:
 //! - `<cell>:where:<key>=<v>` (equality) or `<cell>:where:<key>=<v1>|<v2>` (set): only rows whose `key` is one of them;
 //! - `<cell>:scope:<key>=<v>`, the first edition's spelling, read as the same equality caveat (v1 callers keep it).
-//! A wildcard right (`*`) carries no caveat and invents none. Until cap v3 is in ce-gate, this crate is the caveat check.
+//! A wildcard right (`*`) carries no caveat and invents none.
+//!
+//! Never droppable: ce-gate ([`ce_gate::row_caveats_kept`], rust-stack 2aede6d) refuses a chain in which any link
+//! omits or widens a caveat its parent carried, so the leaf this crate reads holds the intersection of every link's
+//! caveats, and every row caveat reaches the cell (none is cut off by the 64-ability limit). A delegate that drops
+//! `cr.devices:where:node=..` is refused at the Hello; it never reaches [`Caveats::of`] unfiltered.
+//!
+//! Sources: a view cell calls its sources with its own key ([`cell_key`]), never the node's: the node mints each cell
+//! one grant for exactly the abilities it reads with (`ce-iam grant --to <cell key> --action .. --action delegate:1`),
+//! kept beside the cell's key in `<ce data dir>/cell-keys/<api>/` (`identity/node.key`, `grant.hex`).
+//! [`source_token`] attenuates that grant to one source's abilities for a short time. A taken backend holds its own
+//! narrow grant, not the node's root.
 #![forbid(unsafe_code)]
 
 use ce_wire::{Api, Caller};
@@ -58,12 +68,107 @@ pub fn new_id() -> String {
     b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
-/// The grant this cell presents to source `A`: a chain this node signs for itself with exactly `abilities` (never
-/// `<api>:*`), for `secs`, optionally confined to `path_prefix`. What a view cell may read is this list, in its code.
+/// The proof this cell presents to source `A`: its own grant ([`cell_key`]) attenuated by its own key to exactly
+/// `abilities` (never `<api>:*`), for `secs`, optionally confined to `path_prefix`. What a view cell may read is this
+/// list, in its code, and never more than the node granted it. Never the node's key: before [`init`] it is an error.
 pub fn source_token<A: Api>(abilities: &[&str], secs: u64, path_prefix: Option<&str>) -> Result<Vec<u8>, String> {
-    let me = ce_gate::node_identity().map_err(|e| format!("this machine has no ce identity: {e}"))?;
-    let chain = ce_gate::self_chain_in(&me, abilities.iter().map(|a| a.to_string()).collect(), secs, path_prefix.map(String::from));
-    Ok(ce_gate::proof::<A>(&me, &chain))
+    let k = cell_key()?;
+    Ok(ce_gate::proof::<A>(&k.id, &k.attenuate(abilities, secs, path_prefix)?))
+}
+
+pub use cell_key::{cell_key, init, node_id, CellKey};
+
+/// A view cell's own key and the grant its node minted for it.
+pub mod cell_key {
+    use ce_gate::ce_cap::{ability_covers, Caveats, SignedCapability};
+    use ce_gate::ce_identity::{Identity, NodeId};
+    use std::path::{Path, PathBuf};
+    use std::sync::OnceLock;
+
+    pub struct CellKey {
+        pub api: String,
+        pub id: Identity,
+        /// root (this node) -> this cell's key: the abilities the cell reads its sources with, and `delegate:1`
+        pub grant: Vec<SignedCapability>,
+    }
+
+    static KEY: OnceLock<CellKey> = OnceLock::new();
+
+    /// Where cell `api` keeps its key and grant: `$CE_CELL_KEY_DIR`, else `<ce data dir>/cell-keys/<api>`.
+    pub fn dir(api: &str) -> PathBuf {
+        std::env::var("CE_CELL_KEY_DIR").ok().filter(|d| !d.is_empty()).map(PathBuf::from)
+            .unwrap_or_else(|| ce_wire::ce_data_dir().join("cell-keys").join(api))
+    }
+
+    /// Load this process's cell key once (at the top of `serve`): `api`'s key and grant from [`dir`].
+    pub fn init(api: &str) -> Result<&'static CellKey, String> {
+        if let Some(k) = KEY.get() {
+            return if k.api == api { Ok(k) } else { Err(format!("cell key already loaded for {}, not {api}", k.api)) };
+        }
+        let k = CellKey::load(api, &dir(api))?;
+        Ok(KEY.get_or_init(|| k))
+    }
+
+    /// The key [`init`] loaded. None loaded: an error, never a fall back to the node's key.
+    pub fn cell_key() -> Result<&'static CellKey, String> {
+        KEY.get().ok_or_else(|| "no cell key loaded (ui_chain::init(<api>) at start; the node's own key is never used)".into())
+    }
+
+    /// This node's id (the root of the cell's grant): what the cell's own gate roots chains at.
+    pub fn node_id() -> Result<NodeId, String> {
+        Ok(cell_key()?.root())
+    }
+
+    impl CellKey {
+        /// `<dir>/identity/node.key` (32 bytes, the layout `ce-iam --data-dir <dir>` keeps) and `<dir>/grant.hex` (the
+        /// chain `ce-iam grant --to <its id>` printed). Refused unless the grant's leaf is held by that key.
+        pub fn load(api: &str, dir: &Path) -> Result<CellKey, String> {
+            let kf = dir.join("identity/node.key");
+            let b = std::fs::read(&kf).map_err(|e| format!("{api}: no cell key at {}: {e}", kf.display()))?;
+            let b: [u8; 32] = b.try_into().map_err(|_| format!("{}: not a 32-byte key", kf.display()))?;
+            let id = Identity::from_secret_bytes(&b);
+            let gf = dir.join("grant.hex");
+            let hex = std::fs::read_to_string(&gf).map_err(|e| format!("{api}: no grant at {}: {e}", gf.display()))?;
+            let grant = ce_gate::chain_from_hex(hex.trim()).map_err(|e| format!("{}: {e}", gf.display()))?;
+            CellKey::new(api, id, grant)
+        }
+
+        pub fn new(api: &str, id: Identity, grant: Vec<SignedCapability>) -> Result<CellKey, String> {
+            let leaf = grant.last().ok_or_else(|| format!("{api}: an empty grant"))?;
+            if leaf.cap.audience != id.node_id() {
+                return Err(format!("{api}: the grant is not held by this cell's key"));
+            }
+            if grant.iter().flat_map(|l| &l.cap.abilities).any(|a| a == "*") {
+                return Err(format!("{api}: a cell grant names its abilities, never *"));
+            }
+            Ok(CellKey { api: api.into(), id, grant })
+        }
+
+        /// The issuer of the grant's first link: the node.
+        pub fn root(&self) -> NodeId {
+            self.grant[0].cap.issuer
+        }
+
+        /// The grant plus one link, signed by this cell's key to itself: exactly `abilities` (each covered by the
+        /// grant's leaf, else refused here), `secs` long (never past the grant), optionally under `path_prefix`.
+        pub fn attenuate(&self, abilities: &[&str], secs: u64, path_prefix: Option<&str>) -> Result<Vec<SignedCapability>, String> {
+            let leaf = self.grant.last().expect("checked in new");
+            if let Some(a) = abilities.iter().find(|a| !leaf.cap.abilities.iter().any(|g| ability_covers(g, a))) {
+                return Err(format!("{}: {a} is not in this cell's grant", self.api));
+            }
+            let now = crate::now_s() as u64;
+            let end = match leaf.cap.caveats.not_after {
+                0 => now + secs,
+                n => (now + secs).min(n),
+            };
+            let cv = Caveats { not_after: end, path_prefix: path_prefix.map(String::from).or_else(|| leaf.cap.caveats.path_prefix.clone()), ..leaf.cap.caveats.clone() };
+            let mut n = [0u8; 8];
+            getrandom::getrandom(&mut n).map_err(|e| format!("os random: {e}"))?;
+            let mut out = self.grant.clone();
+            out.push(SignedCapability::issue(&self.id, self.id.node_id(), abilities.iter().map(|a| a.to_string()).collect(), leaf.cap.resource.clone(), cv, u64::from_le_bytes(n), Some(leaf.id())));
+            Ok(out)
+        }
+    }
 }
 
 /// This machine's short host name (the node name the rows use for the local node).
