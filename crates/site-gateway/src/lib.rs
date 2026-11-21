@@ -79,6 +79,54 @@ pub fn signed_person(head: &str, key: &[u8], now: u64) -> Option<String> {
     Some(person.to_string())
 }
 
+/// At most this many paths, and this many bytes of header value, are signed for a link session (the gate sends no
+/// header beyond them).
+pub const PATHS_MAX: usize = 64;
+pub const PATHS_BYTES_MAX: usize = 2048;
+
+fn pct_decode(s: &str) -> Option<String> {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' {
+            let h = s.get(i + 1..i + 3)?;
+            out.push(u8::from_str_radix(h, 16).ok()?);
+            i += 3;
+        } else {
+            out.push(b[i]);
+            i += 1;
+        }
+    }
+    String::from_utf8(out).ok()
+}
+
+/// The paths the gate signed for `person`'s link session into this request head (repo:ce
+/// docs/UI-AS-CELLS-2026-11-21.md 11.5), decoded, or None: no `X-Ce-Paths`, a signature that is not the person key's
+/// HMAC-SHA256 over `ce-paths\n<person>\n<at>\n<value>` (`at` = this request's `X-Ce-Person-At`), older than
+/// SIG_MAX_AGE, over the caps, or a path that is not an absolute, decodable path. `person` is the one
+/// `signed_person` returned for the same head, so a header signed for someone else is refused. The check is
+/// constant-time (`verify_slice`).
+pub fn signed_paths(head: &str, key: &[u8], now: u64, person: &str) -> Option<Vec<String>> {
+    use hmac::{Hmac, Mac};
+    let value = header(head, "x-ce-paths").filter(|v| !v.is_empty())?;
+    let sig = header(head, "x-ce-paths-sig")?;
+    let at = header(head, "x-ce-person-at")?;
+    let t: u64 = at.parse().ok()?;
+    if person.is_empty() || t.abs_diff(now) > SIG_MAX_AGE || sig.len() != 64 || value.len() > PATHS_BYTES_MAX {
+        return None;
+    }
+    let want: Vec<u8> = (0..32).map(|i| u8::from_str_radix(sig.get(2 * i..2 * i + 2)?, 16).ok()).collect::<Option<_>>()?;
+    let mut m = Hmac::<sha2::Sha256>::new_from_slice(key).ok()?;
+    m.update(format!("ce-paths\n{person}\n{at}\n{value}").as_bytes());
+    m.verify_slice(&want).ok()?;
+    let paths: Vec<String> = value.split(' ').map(pct_decode).collect::<Option<_>>()?;
+    if paths.len() > PATHS_MAX || paths.iter().any(|p| !p.starts_with('/') || p.chars().any(|c| c.is_control())) {
+        return None;
+    }
+    Some(paths)
+}
+
 pub fn read_key(p: &Path) -> Option<Vec<u8>> {
     let s = std::fs::read_to_string(p).ok()?;
     let s = s.trim();
@@ -278,6 +326,37 @@ mod tests {
         assert_eq!(signed_person(&head("leif", 1000, &sign("ops", 1000)), &key, 1010), None);
         assert_eq!(signed_person(&head("leif", 1000, &sign("leif", 1000)), &key, 2000), None);
         assert_eq!(signed_person("GET / HTTP/1.1\r\nX-Ce-Person: leif\r\n\r\n", &key, 0), None);
+    }
+
+    #[test]
+    fn signed_paths_are_bound_to_person_time_and_value() {
+        use hmac::{Hmac, Mac};
+        let key = [9u8; 32];
+        let sign = |p: &str, at: u64, v: &str| {
+            let mut m = Hmac::<sha2::Sha256>::new_from_slice(&key).unwrap();
+            m.update(format!("ce-paths\n{p}\n{at}\n{v}").as_bytes());
+            m.finalize().into_bytes().iter().map(|b| format!("{b:02x}")).collect::<String>()
+        };
+        let head = |at: u64, v: &str, sig: &str| format!("GET / HTTP/1.1\r\nX-Ce-Person: t-link1\r\nX-Ce-Person-At: {at}\r\nX-Ce-Paths: {v}\r\nX-Ce-Paths-Sig: {sig}\r\n\r\n");
+        let v = "/print-farm/ /doc/abc%20d";
+        let ok = head(1000, v, &sign("t-link1", 1000, v));
+        assert_eq!(signed_paths(&ok, &key, 1010, "t-link1"), Some(vec!["/print-farm/".to_string(), "/doc/abc d".to_string()]));
+        // signed for another person
+        assert_eq!(signed_paths(&head(1000, v, &sign("t-other", 1000, v)), &key, 1010, "t-link1"), None);
+        assert_eq!(signed_paths(&ok, &key, 1010, "t-other"), None);
+        // old at
+        assert_eq!(signed_paths(&ok, &key, 2000, "t-link1"), None);
+        // changed value
+        assert_eq!(signed_paths(&head(1000, "/print-farm/ /secrets/", &sign("t-link1", 1000, v)), &key, 1010, "t-link1"), None);
+        // wrong key
+        assert_eq!(signed_paths(&ok, &[1u8; 32], 1010, "t-link1"), None);
+        // no header
+        assert_eq!(signed_paths("GET / HTTP/1.1\r\nX-Ce-Person-At: 1000\r\n\r\n", &key, 1010, "t-link1"), None);
+        // over the cap of paths
+        let many = (0..65).map(|i| format!("/a{i}/")).collect::<Vec<_>>().join(" ");
+        assert_eq!(signed_paths(&head(1000, &many, &sign("t-link1", 1000, &many)), &key, 1010, "t-link1"), None);
+        // not absolute
+        assert_eq!(signed_paths(&head(1000, "x/", &sign("t-link1", 1000, "x/")), &key, 1010, "t-link1"), None);
     }
 
     #[test]
